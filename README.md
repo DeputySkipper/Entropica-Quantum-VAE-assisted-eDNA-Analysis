@@ -1,6 +1,6 @@
 # ENTROPICA: Quantum-Driven eDNA Discovery Engine
 
-ENTROPICA is a quantum-focused hackathon project that demonstrates how **Quantum Random Number Generation (QRNG)** can be integrated into a **Variational Autoencoder (VAE)** to improve stochastic latent-space sampling for biological sequence analysis.
+ENTROPICA is a quantum-focused project that demonstrates how **Quantum Random Number Generation (QRNG)** can be integrated into a **Variational Autoencoder (VAE)** to improve stochastic latent-space sampling for biological sequence analysis.
 
 This repository is not just "AI for biology"; it is a practical prototype of **quantum-classical hybrid computation** where quantum randomness directly influences model behavior during representation learning.
 
@@ -24,7 +24,7 @@ The main contribution is therefore:
 
 Deep-sea eDNA is inherently uncertain: sparse references, unknown taxa, noisy reads, and high diversity. In this setting, latent-space quality depends strongly on how stochastic sampling behaves.
 
-Using QRNG in the VAE targets three hackathon goals:
+Using QRNG in the VAE targets three goals:
 
 - **Quantum integration**: real insertion point in model internals, not cosmetic usage.
 - **Algorithmic relevance**: randomness controls latent exploration during encoding/decoding.
