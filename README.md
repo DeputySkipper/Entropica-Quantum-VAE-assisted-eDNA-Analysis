@@ -4,7 +4,7 @@ ENTROPICA is a quantum-focused hackathon project that demonstrates how **Quantum
 
 This repository is not just "AI for biology"; it is a practical prototype of **quantum-classical hybrid computation** where quantum randomness directly influences model behavior during representation learning.
 
-## Hackathon Thesis
+## Our Thesis
 
 Classical VAEs depend on pseudo-random number generators (PRNGs) in the reparameterization step:
 
@@ -50,7 +50,7 @@ Although the application domain is eDNA, the architectural pattern is generaliza
 - `src/train_vae.py`
   - training utility for generating model checkpoints.
 
-## What Makes This a Quantum Hackathon Project
+## What Makes This a Quantum Computing Project
 
 - Quantum logic is placed in the mathematically critical path of VAE inference/training behavior.
 - The project supports direct PRNG-vs-QRNG experimental framing.
@@ -81,7 +81,7 @@ python -m src.train_vae --data_dir Dataset --out models/vae.pt --epochs 10
 
 If no compatible checkpoint is found, the pipeline still runs using fallback embeddings so the demo remains robust.
 
-## Suggested Hackathon Evaluation Metrics
+## Suggested Testing Metrics
 
 - Latent cluster compactness/separation (QRNG vs PRNG).
 - Number and consistency of detected outlier/noise points.
