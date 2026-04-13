@@ -1,22 +1,4 @@
-"""
-Core bioinformatics pipeline for ENTROPICA.
-
-This module implements a simple end-to-end analysis pipeline:
-1) Read FASTQ sequences
-2) One-hot encode DNA
-3) Load a VAE (placeholder) and encode sequences to latent vectors
-4) Cluster latent vectors with DBSCAN
-5) Compute counts and relative abundance per cluster
-
-The public entrypoint is `run_analysis(fastq_file_path, metadata)` which returns
-structured results for the web UI.
-
-Notes:
-- The VAE loader is a placeholder. Replace `load_pretrained_vae` with actual
-  model deserialization for production.
-- FASTQ parsing uses Biopython if available; otherwise a minimal fallback
-  parser is attempted.
-"""
+"""Main sequence analysis pipeline used by the Dash app."""
 
 from __future__ import annotations
 
@@ -31,6 +13,7 @@ from typing import Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
+from sklearn.decomposition import PCA
 
 try:
     from Bio import SeqIO  # type: ignore
@@ -145,18 +128,13 @@ def one_hot_encode_sequences(sequences: List[str], max_len: Optional[int] = None
 
 
 class SimpleVAE(nn.Module):
-    """A minimal VAE-like encoder-decoder with accessible encoder for embeddings.
-
-    This is a placeholder architecture; in production, replace with your trained
-    VAE and load weights from disk/cloud.
-    """
+    """Small VAE used to build sequence embeddings."""
 
     def __init__(self, input_dim: int, latent_dim: int = 16, hidden_dim: int = 256) -> None:
         super().__init__()
         self.input_dim = input_dim
         self.latent_dim = latent_dim
         
-        # Instantiate the Quantum QRNG buffer map
         self.qrng = QuantumRandomGenerator()
 
         self.encoder = nn.Sequential(
@@ -184,7 +162,6 @@ class SimpleVAE(nn.Module):
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         std = torch.exp(0.5 * logvar)
         
-        # Pull normalized vectors dynamically from the pre-generated quantum state buffer
         eps = self.qrng.get_normal_tensor(std.shape).to(std.device)
         
         return mu + eps * std
@@ -196,12 +173,8 @@ class SimpleVAE(nn.Module):
         return recon, mu, logvar
 
 
-def load_pretrained_vae(input_dim: int, latent_dim: int = 16) -> SimpleVAE:
-    """Load a pretrained VAE model.
-
-    Attempts to load weights from ENTROPICA_VAE_WEIGHTS or models/vae.pt. If no
-    weights are found, returns a randomly-initialized model in eval mode.
-    """
+def load_pretrained_vae(input_dim: int, latent_dim: int = 16) -> Tuple[SimpleVAE, bool]:
+    """Load a checkpoint when dimensions match the current input."""
     weights_path = os.environ.get("ENTROPICA_VAE_WEIGHTS")
     if not weights_path:
         default_path = os.path.join(os.getcwd(), "models", "vae.pt")
@@ -209,21 +182,23 @@ def load_pretrained_vae(input_dim: int, latent_dim: int = 16) -> SimpleVAE:
             weights_path = default_path
 
     model = SimpleVAE(input_dim=input_dim, latent_dim=latent_dim)
+    loaded_weights = False
     if weights_path and os.path.exists(weights_path):
         try:
             ckpt = torch.load(weights_path, map_location="cpu")
             ckpt_input_dim = ckpt.get("input_dim", input_dim)
             ckpt_latent_dim = ckpt.get("latent_dim", latent_dim)
-            # Rebuild to match checkpoint config if needed
-            if ckpt_input_dim != input_dim or ckpt_latent_dim != latent_dim:
-                model = SimpleVAE(input_dim=ckpt_input_dim, latent_dim=ckpt_latent_dim)
             state = ckpt.get("state_dict", ckpt)
-            model.load_state_dict(state, strict=False)
+
+            if ckpt_input_dim == input_dim:
+                if ckpt_latent_dim != latent_dim:
+                    model = SimpleVAE(input_dim=input_dim, latent_dim=ckpt_latent_dim)
+                model.load_state_dict(state, strict=False)
+                loaded_weights = True
         except Exception:
-            # Fall back to random init if load fails
             pass
     model.eval()
-    return model
+    return model, loaded_weights
 
 
 def _flatten_encoded(encoded: np.ndarray) -> np.ndarray:
@@ -234,13 +209,32 @@ def _flatten_encoded(encoded: np.ndarray) -> np.ndarray:
     return encoded.reshape(n, l * d)
 
 
-def _cluster_dbscan(embeddings: np.ndarray, eps: float = 0.5, min_samples: int = 5) -> np.ndarray:
+def _cluster_dbscan(
+    embeddings: np.ndarray,
+    eps: float = 0.35,
+    min_samples: int = 3,
+    metric: str = "euclidean",
+) -> np.ndarray:
     """Cluster embeddings using DBSCAN. Returns label array of shape (N,)."""
     if embeddings.shape[0] == 0:
         return np.zeros((0,), dtype=np.int32)
-    db = DBSCAN(eps=eps, min_samples=min_samples, metric="euclidean")
+    db = DBSCAN(eps=eps, min_samples=min_samples, metric=metric)
     labels = db.fit_predict(embeddings)
     return labels.astype(np.int32)
+
+
+def _build_fallback_embeddings(flat: np.ndarray, target_dim: int = 16) -> np.ndarray:
+    """Use PCA when no compatible VAE weights are available."""
+    if flat.shape[0] <= 1:
+        return flat.astype(np.float32)
+
+    n_components = min(target_dim, flat.shape[0] - 1, flat.shape[1])
+    if n_components < 2:
+        return flat.astype(np.float32)
+
+    pca = PCA(n_components=n_components, random_state=42)
+    reduced = pca.fit_transform(flat)
+    return reduced.astype(np.float32)
 
 
 def _compute_cluster_stats(labels: np.ndarray, lengths: np.ndarray) -> Tuple[pd.DataFrame, Dict[str, int]]:
@@ -256,7 +250,6 @@ def _compute_cluster_stats(labels: np.ndarray, lengths: np.ndarray) -> Tuple[pd.
     series = pd.Series(labels, name="cluster")
     counts = series.value_counts().sort_index()
 
-    # Exclude noise label -1 from number of clusters and abundance calc
     cluster_ids = [cid for cid in counts.index.tolist() if cid != -1]
     cluster_rows: List[Dict[str, float]] = []
     for cid in cluster_ids:
@@ -273,7 +266,6 @@ def _compute_cluster_stats(labels: np.ndarray, lengths: np.ndarray) -> Tuple[pd.
 
     clusters_df = pd.DataFrame(cluster_rows).sort_values(by="count", ascending=False)
 
-    # Define potential novel taxa heuristically: small clusters (<= min_samples) plus noise presence
     small_threshold = 5
     small_clusters = sum(1 for r in cluster_rows if r["count"] <= small_threshold)
     has_noise = int((-1) in counts.index)
@@ -289,49 +281,54 @@ def _compute_cluster_stats(labels: np.ndarray, lengths: np.ndarray) -> Tuple[pd.
 
 
 def run_analysis(fastq_file_path: str, metadata: Optional[Dict] = None) -> Dict:
-    """Run the full analysis pipeline and return results for the UI.
-
-    Parameters
-    - fastq_file_path: Path to the FASTQ file.
-    - metadata: Optional dictionary with run metadata (e.g., sample id, notes).
-
-    Returns a dictionary with keys:
-    - summary: dict with total_sequences, num_clusters, potential_novel_taxa
-    - clusters_table: list of row dicts for the data table
-    - abundance_chart: dict with x (cluster ids as strings) and y (abundance)
-    - notes: optional string with additional info
-    """
-    # Select parser based on file extension
+    """Run parsing, embedding, clustering, and formatting for the dashboard."""
     lower = fastq_file_path.lower()
-    if lower.endswith((".fa", ".fasta", ".fna", ".fa.gz", ".fasta.gz")):
-        sequences = read_fasta_sequences(fastq_file_path)
-    else:
-        sequences = read_fastq_sequences(fastq_file_path)
+    parser_order = (
+        [read_fasta_sequences, read_fastq_sequences]
+        if lower.endswith((".fa", ".fasta", ".fna", ".fa.gz", ".fasta.gz"))
+        else [read_fastq_sequences, read_fasta_sequences]
+    )
 
-    # Early return if no sequences
+    sequences: List[str] = []
+    parse_error: Optional[Exception] = None
+    for parser in parser_order:
+        try:
+            sequences = parser(fastq_file_path)
+            if sequences:
+                break
+        except Exception as exc:
+            parse_error = exc
+
     if len(sequences) == 0:
+        note = "No sequences detected in the uploaded file."
+        if parse_error is not None:
+            note = (
+                "Could not parse the uploaded file as FASTQ/FASTA. "
+                "Please upload a plain-text .fastq/.fq/.fasta/.fa file."
+            )
         return {
             "summary": {"total_sequences": 0, "num_clusters": 0, "potential_novel_taxa": 0},
             "clusters_table": [],
             "abundance_chart": {"x": [], "y": []},
-            "notes": "No sequences detected in the provided FASTQ.",
+            "notes": note,
         }
 
     encoded, lengths = one_hot_encode_sequences(sequences)
     flat = _flatten_encoded(encoded)
 
-    # Load VAE and compute latent embeddings (use mu as deterministic embedding)
-    vae = load_pretrained_vae(input_dim=flat.shape[1], latent_dim=16)
-    with torch.no_grad():
-        x = torch.from_numpy(flat)
-        mu, logvar = vae.encode(x)
-        embeddings = mu.cpu().numpy()
-
-    labels = _cluster_dbscan(embeddings, eps=0.8, min_samples=5)
+    vae, has_compatible_weights = load_pretrained_vae(input_dim=flat.shape[1], latent_dim=16)
+    if has_compatible_weights:
+        with torch.no_grad():
+            x = torch.from_numpy(flat)
+            mu, logvar = vae.encode(x)
+            embeddings = mu.cpu().numpy()
+        labels = _cluster_dbscan(embeddings, eps=0.35, min_samples=3, metric="euclidean")
+    else:
+        embeddings = _build_fallback_embeddings(flat, target_dim=16)
+        labels = _cluster_dbscan(embeddings, eps=0.22, min_samples=3, metric="cosine")
 
     clusters_df, summary_counts = _compute_cluster_stats(labels, lengths)
 
-    # Prepare outputs
     if not clusters_df.empty:
         x_ids = [str(int(cid)) for cid in clusters_df["cluster_id"].tolist()]
         y_vals = clusters_df["relative_abundance"].tolist()
@@ -348,7 +345,6 @@ def run_analysis(fastq_file_path: str, metadata: Optional[Dict] = None) -> Dict:
         "notes": None,
     }
 
-    # Attach metadata echo for traceability
     if metadata is not None:
         try:
             result["metadata"] = metadata

@@ -4,8 +4,6 @@ from Bio import Entrez
 Entrez.email = "ENTROPICA@quinfosys.com"
 
 print("Searching GenBank for 16S rRNA sequences...")
-# Fetching ~1500 sequences to provide a better dataset for training
-# We use '16S ribosomal RNA[Title] AND bacteria[Filter]'
 handle = Entrez.esearch(db="nucleotide", term="16S ribosomal RNA[Title] AND bacteria[Filter]", retmax=1500)
 record = Entrez.read(handle)
 handle.close()
@@ -23,7 +21,6 @@ try:
         f.write(fasta_data)
     print("Download completed: Dataset/NCBI_16S_dataset.fasta")
     
-    # We remove the mock datasets so that we exclusively train on real NCBI data.
     if os.path.exists("Dataset/mock_1.fasta"):
         os.remove("Dataset/mock_1.fasta")
     if os.path.exists("Dataset/mock_2.fasta"):

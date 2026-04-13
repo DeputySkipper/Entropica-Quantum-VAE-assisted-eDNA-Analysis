@@ -1,11 +1,4 @@
-"""
-ENTROPICA - Deep-sea eDNA analysis web app
-
-Single-file Dash application that mirrors the provided UI design and
-connects to the backend pipeline in `src/pipeline.py`.
-
-Run:  python app.py
-"""
+"""Dash app entrypoint for ENTROPICA."""
 
 from __future__ import annotations
 
@@ -144,7 +137,6 @@ def layout_body() -> html.Div:
     return html.Div(
         className="body",
         children=[
-            # Summary Cards
             html.Div(
                 className="summary",
                 children=[
@@ -160,7 +152,6 @@ def layout_body() -> html.Div:
                 },
             ),
 
-            # Abundance Distribution
             html.Div(
                 className="abundance-section",
                 children=[
@@ -170,7 +161,6 @@ def layout_body() -> html.Div:
                 style={"padding": "0 24px 16px 24px", "background": "#ffffff"},
             ),
 
-            # Taxa Analysis Table
             html.Div(
                 className="table-section",
                 children=[
@@ -206,7 +196,6 @@ app.layout = html.Div(
         header(),
         controls_panel(),
         layout_body(),
-        # Hidden store for uploaded file path
         dcc.Store(id="uploaded-path", storage_type="memory"),
         dcc.Store(id="analysis-results", storage_type="memory"),
     ],
@@ -218,7 +207,6 @@ def _save_uploaded_content(contents: str, filename: str) -> Optional[str]:
     try:
         content_type, content_string = contents.split(",", 1)
         decoded = base64.b64decode(content_string)
-        # Keep original extension if present
         suffix = os.path.splitext(filename)[1] or ".fastq"
         fd, temp_path = tempfile.mkstemp(prefix="entropica_", suffix=suffix)
         with os.fdopen(fd, "wb") as tmp:
@@ -253,11 +241,14 @@ def handle_upload(contents: Optional[str], filename: Optional[str]):
 )
 def run_pipeline(n_clicks: int, uploaded_path: Optional[str]):
     if not uploaded_path or not os.path.exists(uploaded_path):
-        # No file uploaded; return placeholders
         fig = _placeholder_chart()
         return "-", "-", "-", fig, _placeholder_table()
 
-    results = run_analysis(uploaded_path, metadata={"source": "dash"})
+    try:
+        results = run_analysis(uploaded_path, metadata={"source": "dash"})
+    except Exception:
+        fig = _placeholder_chart()
+        return "0", "0", "0", fig, _placeholder_table()
 
     summary = results.get("summary", _placeholder_summary())
     total = summary.get("total_sequences", 0)

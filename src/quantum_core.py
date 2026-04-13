@@ -1,7 +1,4 @@
-"""
-Quantum Core for ENTROPICA.
-Implements a QuantumRandomGenerator using Qiskit.
-"""
+"""Quantum RNG utilities used by the VAE."""
 
 from __future__ import annotations
 
@@ -12,11 +9,7 @@ from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
 
 class QuantumRandomGenerator:
-    """
-    Generates standard normal random numbers utilizing Qiskit's AerSimulator.
-    Implements an asynchronous buffer to prevent bottlenecking the PyTorch
-    computational graph during aggressive epoch training.
-    """
+    """Generates normal samples from simulated quantum measurements."""
     def __init__(self, num_qubits: int = 10, buffer_size: int = 15000):
         self.num_qubits = num_qubits
         self.simulator = AerSimulator()
@@ -27,22 +20,18 @@ class QuantumRandomGenerator:
         self._refill_buffer(self.buffer_size)
 
     def _generate_uniform_batch(self, count: int) -> list[float]:
-        # Construct superposition across N qubits
         qc = QuantumCircuit(self.num_qubits, self.num_qubits)
         qc.h(range(self.num_qubits))
         qc.measure(range(self.num_qubits), range(self.num_qubits))
         
         compiled_circuit = transpile(qc, self.simulator)
         
-        # Execute measuring collapses
         job = self.simulator.run(compiled_circuit, shots=count)
         counts = job.result().get_counts(qc)
         
-        # Formulate uniforms [0, 1) spanning combinations
         uniforms = []
         for bitstring, c_count in counts.items():
             val = int(bitstring, 2)
-            # Standardizing against exact 0 breaking limits
             u = (val + 0.5) / (self.max_val + 1.0)
             uniforms.extend([u] * c_count)
             
@@ -57,7 +46,6 @@ class QuantumRandomGenerator:
         u1 = np.array(uniforms[:half])
         u2 = np.array(uniforms[half:])
         
-        # Execute standard Mathematical Box-Muller Transformation
         r = np.sqrt(-2.0 * np.log(u1))
         theta = 2.0 * np.pi * u2
         
@@ -69,7 +57,6 @@ class QuantumRandomGenerator:
     def get_normal_tensor(self, shape: torch.Size | tuple) -> torch.Tensor:
         required_elements = math.prod(shape)
         
-        # Re-buffer autonomously if depletion hits
         if len(self.buffer) < required_elements:
             self._refill_buffer(max(self.buffer_size, required_elements * 2))
             
