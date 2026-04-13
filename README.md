@@ -95,3 +95,6 @@ ENTROPICA showcases a concrete quantum-classical hybrid pattern:
 - **Quantum randomness as a model primitive**, not an external add-on.
 - **Machine learning architecture with a replaceable stochastic engine**.
 - **Applied to a real scientific challenge with discovery potential**.
+
+## Demo Video Link
+- https://drive.google.com/drive/folders/1SeKRYocj6UuqUzjn7MY4y_eAIUKus0Tp?usp=sharing
