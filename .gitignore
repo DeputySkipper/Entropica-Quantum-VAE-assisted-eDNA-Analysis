@@ -1,0 +1,8 @@
+﻿Dataset/16S_blastdb/
+Dataset/*.tar.gz
+*.sqlite3
+*.btd
+Dataset/16S_blastdb/
+Dataset/*.tar.gz
+*.sqlite3
+*.btd
