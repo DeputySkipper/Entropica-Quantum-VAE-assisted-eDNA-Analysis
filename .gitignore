@@ -1,8 +1,11 @@
-﻿Dataset/16S_blastdb/
-Dataset/*.tar.gz
-*.sqlite3
-*.btd
+﻿# Large local artifacts
 Dataset/16S_blastdb/
 Dataset/*.tar.gz
 *.sqlite3
 *.btd
+# Python env/cache
+.venv/
+__pycache__/
+*.pyc
+# (legacy frontend)
+node_modules/
